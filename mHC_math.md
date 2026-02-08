@@ -1,285 +1,195 @@
-To understand **Manifold-Constrained Hyper-Connections (mHC)** deeply from a mathematical and matrix-based implementation standpoint, we’ll now walk through the entire computation **step-by-step** with a **concrete numerical example**. We'll cover every transformation mathematically so that the full data flow through the layer is visible.
+```markdown
+# Manifold-Constrained Hyper-Connections (mHC) – Numerical Walkthrough
 
----
+This document provides a **step-by-step, matrix-based numerical example** of the forward pass through a **Manifold-Constrained Hyper-Connection (mHC)** layer.
 
-## ✅ Setup
+Goal: Make the full computation transparent using small dimensions and concrete numbers.
 
-Let’s define the following:
+## Setup
 
-* Hidden dimension ( C = 2 )
-* Number of streams ( S = 3 )
-* Batch size ( B = 1 ) (for simplicity)
-* Input vector:
-  [
-  x = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} \in \mathbb{R}^{1 \times 2}
-  ]
+- Hidden dimension **C = 2**
+- Number of streams **S = 3**
+- Batch size **B = 1** (for clarity)
 
----
+**Input vector**
 
-## ✅ Step 1: Stream Expansion
+```math
+\mathbf{x} = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} \in \mathbb{R}^{1 \times 2}
+```
 
-**Replicate the input into ( S ) streams.**
+## Step 1: Stream Expansion
 
-[
-X = \begin{bmatrix}
-1.0 & 2.0 \
-1.0 & 2.0 \
+Replicate the input into **S** identical streams:
+
+```math
+\mathbf{X} = \begin{bmatrix}
+1.0 & 2.0 \\
+1.0 & 2.0 \\
 1.0 & 2.0
 \end{bmatrix} \in \mathbb{R}^{3 \times 2}
-]
+```
 
-Each row of ( X ) is a copy of the input vector ( x ).
+## Step 2: Read Vector (pre-softmax attention weights)
 
----
+Read logits:
 
-## ✅ Step 2: Read Vector ( h^{\text{pre}} ) (Softmax over Read Logits)
+```math
+\mathbf{r} = \begin{bmatrix} 0.2 & 0.5 & 0.3 \end{bmatrix}
+```
 
-Assume the read logits are:
+```math
+\mathbf{h}^{\text{pre}} = \mathrm{softmax}(\mathbf{r}) \approx \begin{bmatrix} 0.289 & 0.391 & 0.320 \end{bmatrix}
+```
 
-[
-r = \begin{bmatrix} 0.2 & 0.5 & 0.3 \end{bmatrix}
-]
+*(Slight difference from the original post due to more precise computation; we'll use rounded values for readability)*
 
-Apply softmax:
+## Step 3: Aggregate Message Input (weighted sum)
 
-[
-h^{\text{pre}} = \text{softmax}(r) = \frac{e^r}{\sum e^r}
-= \frac{1}{e^{0.2} + e^{0.5} + e^{0.3}} \cdot \begin{bmatrix} e^{0.2} & e^{0.5} & e^{0.3} \end{bmatrix}
-\approx \begin{bmatrix} 0.254 & 0.339 & 0.407 \end{bmatrix}
-]
+```math
+\mathbf{u} = \sum_{i=1}^{3} h^{\text{pre}}_i \cdot \mathbf{X}_i
+```
 
-This vector determines **how much each stream contributes to the message input**.
+Because all rows of **X** are identical:
 
----
+```math
+\mathbf{u} = (0.289 + 0.391 + 0.320) \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
+```
 
-## ✅ Step 3: Aggregate Message Input
+## Step 4: Layer Function F(u)
 
-Compute:
-[
-u = \sum_{i=1}^3 h^{\text{pre}}_i \cdot X_i
-]
+For illustration we use the identity transformation:
 
-[
-u = 0.254 \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} + 0.339 \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} + 0.407 \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
-]
+```math
+\mathbf{W} = \begin{bmatrix} 1 & 0 \\ 0 & 1 \end{bmatrix}, \quad F(\mathbf{u}) = \mathbf{Wu} = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
+```
 
-[
-u = (0.254 + 0.339 + 0.407) \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix} = 1.0 \cdot \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
-]
+## Step 5: Write Vector (post-message weights)
 
-So,
-[
-u = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
-]
+Write logits:
 
-This shows **weighted averaging still gives the same input**, due to identical streams.
+```math
+\mathbf{w} = \begin{bmatrix} 0.4 & 0.3 & 0.3 \end{bmatrix}
+```
 
----
+```math
+\mathbf{h}^{\text{post}} = \mathrm{softmax}(\mathbf{w}) \approx \begin{bmatrix} 0.356 & 0.322 & 0.322 \end{bmatrix}
+```
 
-## ✅ Step 4: Layer Function ( F(u) )
+## Step 6: Expand Message to All Streams
 
-Assume ( F(u) = W u ), where
+```math
+\mathbf{Y}_i = h^{\text{post}}_i \cdot F(\mathbf{u})
+```
 
-[
-W = \begin{bmatrix}
-1 & 0 \
-0 & 1
+```math
+\mathbf{Y} \approx \begin{bmatrix}
+0.356 & 0.712 \\
+0.322 & 0.644 \\
+0.322 & 0.644
 \end{bmatrix}
-\quad\text{(identity)}
-]
+```
 
-Then,
-[
-F(u) = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
-]
+## Step 7: Residual Mixing Matrix (Wᵣ) via Sinkhorn-normalized exp(A)
 
----
+Residual logits matrix **A**:
 
-## ✅ Step 5: Write Vector ( h^{\text{post}} ) (Softmax over Write Logits)
-
-Assume write logits:
-
-[
-w = \begin{bmatrix} 0.4 & 0.3 & 0.3 \end{bmatrix}
-]
-
-Softmax:
-
-[
-h^{\text{post}} = \text{softmax}(w) \approx \begin{bmatrix} 0.354 & 0.323 & 0.323 \end{bmatrix}
-]
-
----
-
-## ✅ Step 6: Expand Message into Streams
-
-[
-Y_i = h^{\text{post}}_i \cdot F(u)
-]
-
-Compute each stream:
-
-* ( Y_1 = 0.354 \cdot [1.0, 2.0] = [0.354, 0.708] )
-* ( Y_2 = 0.323 \cdot [1.0, 2.0] = [0.323, 0.646] )
-* ( Y_3 = 0.323 \cdot [1.0, 2.0] = [0.323, 0.646] )
-
-Message matrix:
-
-[
-Y = \begin{bmatrix}
-0.354 & 0.708 \
-0.323 & 0.646 \
-0.323 & 0.646
-\end{bmatrix}
-]
-
----
-
-## ✅ Step 7: Residual Mixing Matrix ( W_r )
-
-Assume residual logits matrix:
-
-[
-A =
-\begin{bmatrix}
-1 & 2 & 1 \
-1 & 3 & 1 \
+```math
+\mathbf{A} = \begin{bmatrix}
+1 & 2 & 1 \\
+1 & 3 & 1 \\
 2 & 1 & 2
 \end{bmatrix}
-]
+```
 
-Exponentiate:
-
-[
-M = e^A =
-\begin{bmatrix}
-e^1 & e^2 & e^1 \
-e^1 & e^3 & e^1 \
-e^2 & e^1 & e^2
-\end{bmatrix}
-\approx
-\begin{bmatrix}
-2.718 & 7.389 & 2.718 \
-2.718 & 20.085 & 2.718 \
+```math
+\mathbf{M} = \exp(\mathbf{A}) \approx \begin{bmatrix}
+2.718 & 7.389 & 2.718 \\
+2.718 & 20.086 & 2.718 \\
 7.389 & 2.718 & 7.389
 \end{bmatrix}
-]
+```
 
-Apply Sinkhorn normalization (10 iterations) → final ( W_r \approx ) (rounded for simplicity):
+After Sinkhorn normalization (row & column sums ≈ 1), the example approximates:
 
-[
-W_r =
-\begin{bmatrix}
-0.30 & 0.40 & 0.30 \
-0.25 & 0.50 & 0.25 \
+```math
+\mathbf{W}_r \approx \begin{bmatrix}
+0.30 & 0.40 & 0.30 \\
+0.25 & 0.50 & 0.25 \\
 0.45 & 0.10 & 0.45
 \end{bmatrix}
-]
+```
 
----
+*(Note: exact values depend on number of Sinkhorn iterations)*
 
-## ✅ Step 8: Mix Residual Streams
+## Step 8: Mix Residual Streams
 
-Compute:
-[
-R \cdot X =
-\begin{bmatrix}
-0.30 & 0.40 & 0.30 \
-0.25 & 0.50 & 0.25 \
-0.45 & 0.10 & 0.45
+```math
+\text{Residual update} = \mathbf{W}_r \mathbf{X}
+```
+
+Because all rows of **X** are identical → every row of the result is still `[1.0, 2.0]`
+
+## Step 9: Combine Message + Residual
+
+```math
+\mathbf{X}' = \mathbf{W}_r \mathbf{X} + \mathbf{Y} \approx \begin{bmatrix}
+1.000 + 0.356 & 2.000 + 0.712 \\
+1.000 + 0.322 & 2.000 + 0.644 \\
+1.000 + 0.322 & 2.000 + 0.644
 \end{bmatrix}
-\cdot
-\begin{bmatrix}
-1.0 & 2.0 \
-1.0 & 2.0 \
-1.0 & 2.0
+= \begin{bmatrix}
+1.356 & 2.712 \\
+1.322 & 2.644 \\
+1.322 & 2.644
 \end{bmatrix}
-=============
+```
 
-\text{Each row} = [1.0, 2.0]
-]
+## Step 10: Collapse Back to Single Output (using read weights again)
 
-So,
-[
-\text{Residual Mixed Matrix} =
-\begin{bmatrix}
-1.0 & 2.0 \
-1.0 & 2.0 \
-1.0 & 2.0
-\end{bmatrix}
-]
+```math
+\mathbf{x}' = \sum_{i=1}^{3} h^{\text{pre}}_i \cdot \mathbf{X}'_i
+```
 
----
+Approximate computation:
 
-## ✅ Step 9: Combine Message and Residual
+- dim 1:  
+  0.289·1.356 + 0.391·1.322 + 0.320·1.322 ≈ **1.330**
 
-[
-X' = W_r \cdot X + Y =
-\begin{bmatrix}
-1.0 + 0.354 & 2.0 + 0.708 \
-1.0 + 0.323 & 2.0 + 0.646 \
-1.0 + 0.323 & 2.0 + 0.646
-\end{bmatrix}
-=============
+- dim 2:  
+  0.289·2.712 + 0.391·2.644 + 0.320·2.644 ≈ **2.662**
 
-\begin{bmatrix}
-1.354 & 2.708 \
-1.323 & 2.646 \
-1.323 & 2.646
-\end{bmatrix}
-]
+```math
+\mathbf{x}' \approx \begin{bmatrix} 1.33 & 2.66 \end{bmatrix}
+```
 
-This is the **updated stream state**.
+## Summary
 
----
+Input  
+→ `x = [1.0, 2.0]`
 
-## ✅ Step 10: Collapse Back to Single Output
+After mHC (multi-stream message + manifold-constrained residual mixing + recombination)  
+→ `x' ≈ [1.33, 2.66]`
 
-Use same ( h^{\text{pre}} = [0.254, 0.339, 0.407] )
+The update comes almost entirely from the **message path** (Y), while the **residual path** remains very close to identity due to the Sinkhorn constraint — this is the core idea behind manifold-constrained hyper-connections.
 
-[
-x' = \sum_i h^{\text{pre}}_i \cdot X'_i
-= 0.254 \cdot [1.354, 2.708] + 0.339 \cdot [1.323, 2.646] + 0.407 \cdot [1.323, 2.646]
-]
+## Next Steps / Extensions
 
-Compute:
+- Derive the **backward pass** (especially through Sinkhorn)
+- Gradient flow through softmax(read) and softmax(write)
+- Non-identity F(·) (gated MLP, attention, etc.)
+- Larger S and C values
+- Actual Sinkhorn implementation in code
 
-* First dimension:
-  [
-  0.254 \cdot 1.354 + 0.339 \cdot 1.323 + 0.407 \cdot 1.323
-  \approx 0.344 + 0.448 + 0.538 = 1.33
-  ]
-* Second dimension:
-  [
-  0.254 \cdot 2.708 + 0.339 \cdot 2.646 + 0.407 \cdot 2.646
-  \approx 0.687 + 0.897 + 1.077 = 2.661
-  ]
+Feel free to open issues / PRs with improvements, more precise numbers, or PyTorch/JAX implementations!
+```
 
-[
-x' = \begin{bmatrix} 1.33 & 2.661 \end{bmatrix}
-]
+You can copy the content above into a file named `README.md`.
 
----
+Let me know if you'd like:
 
-## ✅ Conclusion
+- more precise numerical values throughout  
+- a PyTorch-like pseudocode version  
+- LaTeX → GitHub-flavored math adjustments  
+- diagrams ( mermaid / SVG placeholders )  
 
-We started with input:
-[
-x = \begin{bmatrix} 1.0 & 2.0 \end{bmatrix}
-]
-
-And after applying:
-
-* Multi-stream replication
-* Learned weighted message computation
-* Sinkhorn-projected residual mixing
-* Stream recombination
-
-We obtained:
-[
-x' = \begin{bmatrix} 1.33 & 2.66 \end{bmatrix}
-]
-
-All intermediate matrices, residual updates, and learnable mixings contributed to this. The manifold constraint ensured the **residual component was stable** and identity-like, while **the message update** added new signal directionally via the write vector.
-
-This breakdown gives you an **entire end-to-end math-only forward pass** for mHC using exact matrix operations. Let me know if you want backward pass derivations, gradient propagation math through Sinkhorn, or any customizations.
+Happy to refine! 🚀
